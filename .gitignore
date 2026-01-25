@@ -1,0 +1,29 @@
+# Large video files
+*.mov
+*.mp4
+*.avi
+
+# Image files
+*.jpg
+*.jpeg
+*.png
+
+# Output files
+tracked_output.mp4
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
