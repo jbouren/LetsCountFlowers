@@ -3,6 +3,11 @@
 *.mp4
 *.avi
 
+# Image files
+*.jpg
+*.jpeg
+*.png
+
 # Output files
 tracked_output.mp4
 
