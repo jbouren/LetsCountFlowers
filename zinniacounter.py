@@ -11,20 +11,30 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from ZinniaDetector import ImprovedZinniaDetector
 
 class PanningZinniaCounter:
-    def __init__(self, overlap_threshold=0.3, movement_threshold=50):
+    def __init__(self, overlap_threshold=0.3, movement_threshold=50, use_template_matching=True, template_threshold=0.7):
         """
         Initialize the panning video flower counter
-        
+
         Args:
             overlap_threshold: Minimum overlap ratio to consider flowers as duplicates
             movement_threshold: Minimum pixel movement between frames to detect significant panning
+            use_template_matching: If True, use template matching; if False, use color-based detection
+            template_threshold: Confidence threshold for template matching (0.0-1.0)
         """
         self.overlap_threshold = overlap_threshold
         self.movement_threshold = movement_threshold
         self.tracked_flowers = []  # Store all unique flowers found
         self.frame_data = []       # Store data for each frame
+        self.use_template_matching = use_template_matching
+        self.template_threshold = template_threshold
+
+        # Initialize template-based detector if enabled
+        if use_template_matching:
+            self.detector = ImprovedZinniaDetector()
+            self.detector.load_templates(template_dir="templates", template_pattern="zinnia_template_*.jpg")
         
     def detect_camera_movement(self, prev_frame, curr_frame):
         """Detect camera movement between frames using optical flow"""
@@ -64,9 +74,32 @@ class PanningZinniaCounter:
         return median_dx, median_dy
     
     def detect_flowers_in_frame(self, frame):
-        """Detect flowers in a single frame - same as before but returns bounding boxes"""
+        """Detect flowers in a single frame using template matching or color-based detection"""
+        if self.use_template_matching:
+            return self._detect_flowers_template(frame)
+        else:
+            return self._detect_flowers_color(frame)
+
+    def _detect_flowers_template(self, frame):
+        """Detect flowers using template matching"""
+        detections = self.detector.match_templates(frame, threshold=self.template_threshold)
+
+        flowers = []
+        for detection in detections:
+            x, y, w, h = detection['bbox']
+            flowers.append({
+                'bbox': (x, y, w, h),
+                'center': detection['center'],
+                'area': w * h,
+                'confidence': detection['confidence']
+            })
+
+        return flowers
+
+    def _detect_flowers_color(self, frame):
+        """Detect flowers using color-based detection (original method)"""
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        
+
         # Color ranges for zinnias
         flower_colors = [
             ([0, 50, 50], [10, 255, 255]),    # Red
@@ -75,20 +108,20 @@ class PanningZinniaCounter:
             ([25, 50, 50], [35, 255, 255]),   # Yellow
             ([120, 50, 50], [150, 255, 255]), # Purple
         ]
-        
+
         combined_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
         for lower, upper in flower_colors:
             mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
             combined_mask = cv2.bitwise_or(combined_mask, mask)
-        
+
         # Clean up mask
         kernel = np.ones((5,5), np.uint8)
         combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
         combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel)
-        
+
         # Find contours and extract flower regions
         contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+
         flowers = []
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -101,7 +134,7 @@ class PanningZinniaCounter:
                         x, y, w, h = cv2.boundingRect(contour)
                         center_x = x + w // 2
                         center_y = y + h // 2
-                        
+
                         flowers.append({
                             'bbox': (x, y, w, h),
                             'center': (center_x, center_y),
@@ -109,7 +142,7 @@ class PanningZinniaCounter:
                             'contour': contour,
                             'circularity': circularity
                         })
-        
+
         return flowers
     
     def calculate_overlap(self, bbox1, bbox2):
@@ -416,16 +449,92 @@ class PanningZinniaCounter:
 
 # Example usage
 if __name__ == "__main__":
-    counter = PanningZinniaCounter(overlap_threshold=0.3, movement_threshold=30)
-    
-    video_path = "/Users/jacob/code/LetsCountFlowers/drone.mov"
-    
-    # Option 1: Smart tracking (recommended)
-    print("Running smart tracking analysis...")
-    total_flowers = counter.process_video_smart(video_path, "tracked_output.mp4", sample_every_n_frames=2)
-    counter.generate_report(video_path)
-    
-    # Option 2: Manual frame selection (if smart tracking isn't accurate enough)
-    print("\nGenerating frames for manual counting...")
-    selected_frames = counter.manual_frame_selection(video_path)
-    print(f"For manual verification, count flowers in the selected frames and sum the results.")
+    import glob
+    import os
+    from datetime import datetime
+
+    # Use template matching with 0.57 threshold
+    counter = PanningZinniaCounter(
+        overlap_threshold=0.3,
+        movement_threshold=30,
+        use_template_matching=True,
+        template_threshold=0.59
+    )
+
+    # Create timestamped output folder
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = f"output_{timestamp}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Use pre-selected frames (chosen based on camera movement to minimize overlap)
+    frames_dir = "selected_frames"
+    frame_files = sorted(glob.glob(f"{frames_dir}/frame_*.jpg"))
+
+    print(f"Processing {len(frame_files)} pre-selected frames...")
+    print(f"Output folder: {output_dir}/\n")
+
+    total_flowers = 0
+    frame_counts = []
+
+    for frame_path in frame_files:
+        frame = cv2.imread(frame_path)
+        if frame is None:
+            continue
+
+        flowers = counter.detect_flowers_in_frame(frame)
+        count = len(flowers)
+        total_flowers += count
+        frame_counts.append((frame_path, count))
+
+        # Draw detections on frame
+        annotated = frame.copy()
+        for flower in flowers:
+            x, y, w, h = flower['bbox']
+            cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 255, 0), 3)
+            cv2.circle(annotated, flower['center'], 5, (0, 255, 0), -1)
+
+        # Add count overlay
+        cv2.putText(annotated, f"Detected: {count}", (20, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 4)
+        cv2.putText(annotated, f"Running total: {total_flowers}", (20, 130),
+                    cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 0), 4)
+
+        # Save annotated frame
+        frame_name = os.path.basename(frame_path)
+        base_name = os.path.splitext(frame_name)[0]
+        output_path = os.path.join(output_dir, f"detected_{frame_name}")
+        cv2.imwrite(output_path, annotated)
+
+        # Save YOLO format labels (for training later)
+        h, w = frame.shape[:2]
+        label_path = os.path.join(output_dir, f"{base_name}.txt")
+        with open(label_path, "w") as f:
+            for flower in flowers:
+                x, y, bw, bh = flower['bbox']
+                # YOLO format: class x_center y_center width height (normalized)
+                x_center = (x + bw / 2) / w
+                y_center = (y + bh / 2) / h
+                norm_w = bw / w
+                norm_h = bh / h
+                f.write(f"0 {x_center:.6f} {y_center:.6f} {norm_w:.6f} {norm_h:.6f}\n")
+
+        print(f"{frame_name}: {count} flowers -> {output_path}")
+
+    # Save summary
+    summary_path = os.path.join(output_dir, "summary.txt")
+    with open(summary_path, "w") as f:
+        f.write(f"Zinnia Detection Summary\n")
+        f.write(f"========================\n")
+        f.write(f"Timestamp: {timestamp}\n")
+        f.write(f"Frames processed: {len(frame_files)}\n")
+        f.write(f"Total flowers detected: {total_flowers}\n")
+        f.write(f"Average per frame: {total_flowers/len(frame_files):.1f}\n\n")
+        f.write(f"Per-frame counts:\n")
+        for path, count in frame_counts:
+            f.write(f"  {os.path.basename(path)}: {count}\n")
+
+    print(f"\n{'='*50}")
+    print(f"TOTAL FLOWERS DETECTED: {total_flowers}")
+    print(f"{'='*50}")
+    print(f"\nOutput saved to: {output_dir}/")
+    print(f"Summary: {summary_path}")

@@ -374,27 +374,54 @@ class ImprovedZinniaDetector:
             'accuracy': len(verified) / len(detections) if detections else 0
         }
     
+    def _get_next_index(self, directory, prefix):
+        """Get the next available index for saving files"""
+        import glob
+        existing = glob.glob(os.path.join(directory, f"{prefix}_*.jpg"))
+        if not existing:
+            return 0
+        # Extract numbers from filenames and find max
+        indices = []
+        for f in existing:
+            basename = os.path.basename(f)
+            # Extract number from filename like "flower_0001.jpg"
+            try:
+                num = int(basename.replace(prefix + "_", "").replace(".jpg", ""))
+                indices.append(num)
+            except ValueError:
+                continue
+        return max(indices) + 1 if indices else 0
+
     def save_training_data(self, image, output_dir="training_data"):
-        """Save verified flowers and false positives for future training"""
+        """Save verified flowers and false positives for future training (accumulates across sessions)"""
         os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(os.path.join(output_dir, "flowers"), exist_ok=True)
-        os.makedirs(os.path.join(output_dir, "not_flowers"), exist_ok=True)
-        
+        flowers_dir = os.path.join(output_dir, "flowers")
+        not_flowers_dir = os.path.join(output_dir, "not_flowers")
+        os.makedirs(flowers_dir, exist_ok=True)
+        os.makedirs(not_flowers_dir, exist_ok=True)
+
+        # Get starting indices to avoid overwriting
+        flower_idx = self._get_next_index(flowers_dir, "flower")
+        not_flower_idx = self._get_next_index(not_flowers_dir, "not_flower")
+
         # Save verified flowers
         for i, flower in enumerate(self.verified_flowers):
             x, y, w, h = flower['bbox']
             crop = image[y:y+h, x:x+w]
-            filename = os.path.join(output_dir, "flowers", f"flower_{i:04d}.jpg")
+            filename = os.path.join(flowers_dir, f"flower_{flower_idx + i:04d}.jpg")
             cv2.imwrite(filename, crop)
-        
+
         # Save false positives
         for i, fp in enumerate(self.false_positives):
             x, y, w, h = fp['bbox']
             crop = image[y:y+h, x:x+w]
-            filename = os.path.join(output_dir, "not_flowers", f"not_flower_{i:04d}.jpg")
+            filename = os.path.join(not_flowers_dir, f"not_flower_{not_flower_idx + i:04d}.jpg")
             cv2.imwrite(filename, crop)
-        
-        print(f"Saved {len(self.verified_flowers)} flower samples and {len(self.false_positives)} non-flower samples to {output_dir}")
+
+        total_flowers = flower_idx + len(self.verified_flowers)
+        total_not_flowers = not_flower_idx + len(self.false_positives)
+        print(f"Saved {len(self.verified_flowers)} flower samples and {len(self.false_positives)} non-flower samples")
+        print(f"Total training data: {total_flowers} flowers, {total_not_flowers} not_flowers")
 
 # Utility functions for integration with panning video counter
 def integrate_with_panning_counter():
@@ -435,7 +462,7 @@ if __name__ == "__main__":
     print("=== Step 1: Load Templates ===")
     
     # Method A: Load all templates matching a pattern
-    num_loaded = detector.load_templates(template_dir=".", template_pattern="zinnia_template_*.jpg")
+    num_loaded = detector.load_templates(template_dir="templates", template_pattern="zinnia_template_*.jpg")
     
     # Method B: Load specific template files
     # template_files = ["zinnia_template_0.jpg", "zinnia_template_1.jpg", "zinnia_template_2.jpg"]
