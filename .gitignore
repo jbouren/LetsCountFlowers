@@ -27,3 +27,18 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# YOLO training artifacts
+runs/
+yolov8n.pt
+*.pt
+
+# Dataset directories (large files)
+yolo_annotations/
+yolo_augmented/
+yolo_auto/
+yolo_dataset/
+yolo_preprocessed/
+yolo_validated/
+selected_frames/
+outputs/
