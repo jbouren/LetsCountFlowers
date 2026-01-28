@@ -10,6 +10,7 @@
 
 # Output files
 tracked_output.mp4
+yolo_slideshow.mp4
 
 # Python
 __pycache__/
@@ -29,9 +30,20 @@ __pycache__/
 Thumbs.db
 
 # YOLO training artifacts
-runs/
 yolov8n.pt
-*.pt
+
+# Exclude notification scripts
+train_with_notify.py
+test_notify.py
+
+# Keep training results but ignore large model files
+runs/**/weights/*.pt
+!runs/detect/runs/zinnia/train/results.png
+!runs/detect/runs/zinnia/train/results.csv
+!runs/detect/runs/zinnia/train/args.yaml
+!runs/detect/runs/zinnia/train/confusion_matrix.png
+!runs/detect/runs/zinnia/train/confusion_matrix_normalized.png
+!runs/detect/runs/zinnia/train/*_curve.png
 
 # Dataset directories (large files)
 yolo_annotations/

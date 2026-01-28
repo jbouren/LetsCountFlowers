@@ -88,3 +88,14 @@ The analysis generates:
 - Annotated video showing detected flowers and running counts
 - Analysis plots showing detection statistics over time
 - Final count of unique Zinnia flowers in the footage
+
+## YOLO Training Results
+
+The YOLOv8 model was trained on augmented Zinnia flower data for 50 epochs. Training achieved:
+- **Best mAP50: 61.2%** (epoch 39)
+- **Final mAP50: 59.4%** (epoch 50)
+- **mAP50-95: 28.6%**
+
+Training curves and metrics are available in `runs/detect/runs/zinnia/train/results.png`:
+
+![Training Results](runs/detect/runs/zinnia/train/results.png)
